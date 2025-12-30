@@ -6,6 +6,7 @@ import json
 import logging
 import signal
 import time
+import uuid
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
@@ -43,6 +44,14 @@ from verifiers.types import (
     State,
 )
 from verifiers.utils.async_utils import maybe_semaphore
+from verifiers.utils.checkpoint_utils import (
+    CheckpointMeta,
+    checkpoint_dict_to_state,
+    hash_sampling_args,
+    load_checkpoint,
+    save_checkpoint,
+    validate_checkpoint_compatibility,
+)
 from verifiers.utils.error_utils import ErrorChain
 from verifiers.utils.eval_utils import make_dataset, save_rollout_results
 from verifiers.utils.message_utils import (
@@ -816,6 +825,10 @@ class Environment(ABC):
         save_results: bool = False,
         save_every: int = -1,
         use_tqdm: bool = True,
+        # resume support
+        resume: bool = False,
+        resume_from: Path | None = None,
+        checkpoint_every: int = 1,
     ) -> GenerateOutputs:
         """
         Generate rollouts for a set of inputs by group.
@@ -851,6 +864,83 @@ class Environment(ABC):
         if sampling_args is not None:
             gen_sampling_args.update(sampling_args)
 
+        # Resume from checkpoint if requested
+        completed_states: list[State] = []
+        completed_example_ids: set[int] = set()
+        checkpoint_meta: CheckpointMeta | None = None
+        checkpoint_dir: Path | None = None
+
+        # Determine checkpoint directory
+        if results_path is not None:
+            checkpoint_dir = results_path
+        else:
+            from verifiers.utils.path_utils import get_results_path
+            checkpoint_dir = get_results_path(self.env_id, model)
+
+        # Compute rollouts_per_example from inputs
+        example_ids_in_inputs = set(i["example_id"] for i in inputs_list)
+        rollouts_per_example = len(inputs_list) // len(example_ids_in_inputs) if example_ids_in_inputs else 1
+
+        if resume and resume_from:
+            meta, rollout_data = load_checkpoint(resume_from)
+            if meta is not None:
+                is_valid, error = validate_checkpoint_compatibility(
+                    meta, self.env_id, model, rollouts_per_example, gen_sampling_args
+                )
+                if not is_valid:
+                    raise ValueError(f"Checkpoint incompatible: {error}")
+                completed_example_ids = set(meta.completed_example_ids)
+                checkpoint_meta = meta
+                # Reconstruct states from checkpoint data
+                for rd in rollout_data:
+                    state = checkpoint_dict_to_state(rd)
+                    completed_states.append(state)
+                self.logger.info(f"Resuming: {len(completed_example_ids)} examples already completed")
+            else:
+                self.logger.warning(f"No checkpoint found at {resume_from}, starting fresh")
+
+        # Filter out already-completed inputs
+        if completed_example_ids:
+            original_count = len(inputs_list)
+            inputs_list = [i for i in inputs_list if i["example_id"] not in completed_example_ids]
+            self.logger.info(f"Filtered inputs: {original_count} -> {len(inputs_list)} remaining")
+
+            # Rebuild group_list from filtered inputs
+            input_groups = {}
+            for input_item in inputs_list:
+                example_id = input_item["example_id"]
+                if example_id not in input_groups:
+                    input_groups[example_id] = []
+                input_groups[example_id].append(input_item)
+            group_list = list(input_groups.values())
+
+        # Initialize checkpoint metadata if not resuming
+        if checkpoint_meta is None and checkpoint_every > 0:
+            run_id = uuid.uuid4().hex[:8]
+            checkpoint_meta = CheckpointMeta(
+                run_id=run_id,
+                env_id=self.env_id,
+                model=model,
+                rollouts_per_example=rollouts_per_example,
+                sampling_args_hash=hash_sampling_args(gen_sampling_args),
+                completed_example_ids=[],
+                total_examples=len(example_ids_in_inputs),
+                completed_rollouts=0,
+                start_time=datetime.now().isoformat(),
+                last_checkpoint_time=datetime.now().isoformat(),
+            )
+
+        # Early return if all examples already completed
+        if not group_list and completed_states:
+            self.logger.info("All examples already completed, returning cached results")
+            all_states = completed_states
+            all_states.sort(key=lambda s: s.get("example_id", 0))
+            start_time = time.time()
+            return self._prepare_rollout_results(
+                all_states, model, client, state_columns, results_path,
+                gen_sampling_args, start_time
+            )
+
         # create tasks for all groups
         start_time = time.time()
         group_tasks = {
@@ -878,7 +968,7 @@ class Environment(ABC):
             )
 
         groups_completed = 0
-        all_states: list[State] = []
+        all_states: list[State] = list(completed_states)  # Start with resumed states
         try:
             for coro in asyncio.as_completed(group_tasks.keys()):
                 group_states = await coro
@@ -907,6 +997,26 @@ class Environment(ABC):
                         f"Saving intermediate results to {temp_results['metadata']['path_to_save']}"
                     )
                     save_rollout_results(temp_results)
+
+                # save checkpoint
+                if (
+                    checkpoint_every > 0
+                    and checkpoint_meta is not None
+                    and checkpoint_dir is not None
+                    and groups_completed % checkpoint_every == 0
+                ):
+                    save_checkpoint(checkpoint_dir, all_states, checkpoint_meta)
+        except Exception:
+            # Save checkpoint on error before re-raising
+            if (
+                checkpoint_every > 0
+                and checkpoint_meta is not None
+                and checkpoint_dir is not None
+                and all_states
+            ):
+                self.logger.info("Saving checkpoint on error...")
+                save_checkpoint(checkpoint_dir, all_states, checkpoint_meta)
+            raise
         finally:
             if pbar is not None:
                 pbar.close()
@@ -995,6 +1105,10 @@ class Environment(ABC):
         state_columns: list[str] | None = None,
         save_results: bool = False,
         save_every: int = -1,
+        # resume support
+        resume: bool = False,
+        resume_from: Path | None = None,
+        checkpoint_every: int = 1,
         **kwargs,
     ) -> GenerateOutputs:
         """
@@ -1013,6 +1127,10 @@ class Environment(ABC):
             state_columns=state_columns,
             save_results=save_results,
             save_every=save_every,
+            # resume support
+            resume=resume,
+            resume_from=resume_from,
+            checkpoint_every=checkpoint_every,
             **kwargs,
         )
 

@@ -156,6 +156,10 @@ async def run_evaluation(config: EvalConfig) -> GenerateOutputs:
         state_columns=config.state_columns,
         save_results=config.save_results,
         save_every=config.save_every,
+        # resume support
+        resume=config.resume,
+        resume_from=Path(config.resume_from) if config.resume_from else None,
+        checkpoint_every=config.checkpoint_every,
     )
     end_time = time.time()
     logger.info(f"Evaluation completed in {end_time - start_time:.2f} seconds")

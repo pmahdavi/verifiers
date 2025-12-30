@@ -225,6 +225,26 @@ def main():
         default={},
         help='Extra environment as JSON object (e.g., \'{"key": "value", "num": 42}\'). Passed to environment constructor.',
     )
+    # resume support
+    parser.add_argument(
+        "--resume",
+        "-R",
+        default=False,
+        action="store_true",
+        help="Resume from a previous checkpoint",
+    )
+    parser.add_argument(
+        "--resume-from",
+        type=str,
+        default=None,
+        help="Path to checkpoint directory to resume from",
+    )
+    parser.add_argument(
+        "--checkpoint-every",
+        type=int,
+        default=1,
+        help="Save checkpoint every N example groups (default: 1)",
+    )
     args = parser.parse_args()
 
     setup_logging("DEBUG" if args.verbose else os.getenv("VF_LOG_LEVEL", "INFO"))
@@ -322,6 +342,10 @@ def main():
         save_every=args.save_every,
         save_to_hf_hub=args.save_to_hf_hub,
         hf_hub_dataset_name=args.hf_hub_dataset_name,
+        # resume
+        resume=args.resume,
+        resume_from=args.resume_from,
+        checkpoint_every=args.checkpoint_every,
     )
     logger.debug(f"Evaluation config: {eval_config.model_dump_json(indent=2)}")
     asyncio.run(run_evaluation(eval_config))
