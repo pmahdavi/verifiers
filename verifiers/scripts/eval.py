@@ -219,6 +219,13 @@ def main():
         help="Name of dataset to save to Hugging Face Hub",
     )
     parser.add_argument(
+        "--hf-hub-private",
+        "-P",
+        default=False,
+        action="store_true",
+        help="Make the Hugging Face Hub dataset private",
+    )
+    parser.add_argument(
         "--extra-env-kwargs",
         "-x",
         type=json.loads,
@@ -342,6 +349,7 @@ def main():
         save_every=args.save_every,
         save_to_hf_hub=args.save_to_hf_hub,
         hf_hub_dataset_name=args.hf_hub_dataset_name,
+        hf_hub_private=args.hf_hub_private,
         # resume
         resume=args.resume,
         resume_from=args.resume_from,

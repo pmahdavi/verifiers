@@ -166,7 +166,12 @@ async def run_evaluation(config: EvalConfig) -> GenerateOutputs:
     if config.print_results:
         print_results(results)
     if config.save_results:
-        save_rollout_results(results, config.save_to_hf_hub, config.hf_hub_dataset_name)
+        save_rollout_results(
+            results,
+            config.save_to_hf_hub,
+            config.hf_hub_dataset_name,
+            config.hf_hub_private,
+        )
     return results
 
 
@@ -257,6 +262,7 @@ def save_rollout_results(
     results: GenerateOutputs,
     push_to_hf_hub: bool = False,
     hf_hub_dataset_name: str | None = None,
+    hf_hub_private: bool = False,
 ):
     path_to_save = results["metadata"]["path_to_save"]
     path_to_save.parent.mkdir(parents=True, exist_ok=True)
@@ -266,5 +272,6 @@ def save_rollout_results(
     logger.info(f"Results saved to {path_to_save}")
     if push_to_hf_hub:
         dataset_name = hf_hub_dataset_name or get_hf_hub_dataset_name(results)
-        dataset.push_to_hub(dataset_name)
-        logger.info(f"Dataset saved to Hugging Face Hub: {dataset_name}")
+        dataset.push_to_hub(dataset_name, private=hf_hub_private)
+        visibility = "private" if hf_hub_private else "public"
+        logger.info(f"Dataset saved to Hugging Face Hub ({visibility}): {dataset_name}")

@@ -242,6 +242,7 @@ class EvalConfig(BaseModel):
     save_every: int = -1
     save_to_hf_hub: bool = False
     hf_hub_dataset_name: str | None = None
+    hf_hub_private: bool = False
     # resume support
     resume: bool = False
     resume_from: str | None = None
