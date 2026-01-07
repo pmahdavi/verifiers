@@ -137,7 +137,10 @@ async def run_evaluation(config: EvalConfig) -> GenerateOutputs:
         vf_env.set_kwargs(**config.extra_env_kwargs)
 
     # run evaluation
-    results_path = get_eval_results_path(config)
+    if config.output_dir:
+        results_path = Path(config.output_dir)
+    else:
+        results_path = get_eval_results_path(config)
     logger.info(f"Starting evaluation with model: {config.model}")
     logger.info(
         f"Configuration: num_examples={config.num_examples}, rollouts_per_example={config.rollouts_per_example}, max_concurrent={config.max_concurrent}"

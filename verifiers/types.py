@@ -247,3 +247,5 @@ class EvalConfig(BaseModel):
     resume: bool = False
     resume_from: str | None = None
     checkpoint_every: int = 1
+    # output directory override
+    output_dir: str | None = None

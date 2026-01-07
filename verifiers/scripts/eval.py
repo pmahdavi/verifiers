@@ -252,6 +252,13 @@ def main():
         default=1,
         help="Save checkpoint every N example groups (default: 1)",
     )
+    parser.add_argument(
+        "--output-dir",
+        "-o",
+        type=str,
+        default=None,
+        help="Override output directory for results and checkpoints",
+    )
     args = parser.parse_args()
 
     setup_logging("DEBUG" if args.verbose else os.getenv("VF_LOG_LEVEL", "INFO"))
@@ -354,6 +361,8 @@ def main():
         resume=args.resume,
         resume_from=args.resume_from,
         checkpoint_every=args.checkpoint_every,
+        # output directory override
+        output_dir=args.output_dir,
     )
     logger.debug(f"Evaluation config: {eval_config.model_dump_json(indent=2)}")
     asyncio.run(run_evaluation(eval_config))
