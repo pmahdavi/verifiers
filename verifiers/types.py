@@ -210,6 +210,7 @@ class ClientConfig(BaseModel):
     api_key_var: str = "PRIME_API_KEY"
     api_base_url: str = "https://api.pinference.ai/api/v1"
     timeout: float = 3600.0
+    connect_timeout: float = 30.0  # TCP connection timeout (increased from 5.0 for heavy async workloads)
     max_connections: int = 28000
     max_keepalive_connections: int = 28000
     max_retries: int = 10

@@ -14,7 +14,9 @@ def setup_client(
     A helper function to setup an AsyncOpenAI client.
     """
     # Setup timeouts and limits
-    http_timeout = httpx.Timeout(config.timeout, connect=5.0)
+    # connect_timeout: TCP connection establishment (default 30s for heavy async workloads)
+    # timeout: read/write timeout for actual request processing
+    http_timeout = httpx.Timeout(config.timeout, connect=config.connect_timeout)
     limits = httpx.Limits(
         max_connections=config.max_connections,
         max_keepalive_connections=config.max_keepalive_connections,
